@@ -2895,6 +2895,7 @@ const (
 	ErrCodeUnknownSticker                        = 10060
 	ErrCodeUnknownInteraction                    = 10062
 	ErrCodeUnknownApplicationCommand             = 10063
+	ErrCodeUnknownVoiceState                     = 10065
 	ErrCodeUnknownApplicationCommandPermissions  = 10066
 	ErrCodeUnknownStageInstance                  = 10067
 	ErrCodeUnknownGuildMemberVerificationForm    = 10068
