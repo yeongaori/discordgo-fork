@@ -609,7 +609,7 @@ func (v *VoiceConnection) onEvent(ctx context.Context, binary bool, message []by
 			// Start the opusSender.
 			// TODO: Should we allow 48000/960 values to be user defined?
 			if v.OpusSend == nil {
-				v.OpusSend = make(chan []byte, 2)
+				v.OpusSend = make(chan []byte, 128)
 			}
 			go v.opusSender(ctx, 48000, 960)
 
