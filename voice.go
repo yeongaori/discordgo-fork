@@ -1145,7 +1145,8 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 			return
 		}
 
-		v.sendDAVEInvalidCommitWelcome(transitionID)
+		dave.HandlePrepareTransition(transitionID, 1)
+		v.sendDAVEReadyForTransition(transitionID)
 
 		kpData, err := dave.GenerateKeyPackage()
 		if err != nil {
@@ -1153,6 +1154,7 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 			return
 		}
 		v.sendDAVEKeyPackageBinary(kpData)
+		v.sendDAVEInvalidCommitWelcome(transitionID)
 
 	case 30:
 		if len(payload) < 2 {
@@ -1176,8 +1178,14 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 			return
 		}
 
+		if err := dave.DeriveSenderKey(); err != nil {
+			v.log(LogError, "DAVE sender key derivation failed: %s", err)
+			return
+		}
+
 		dave.HandlePrepareTransition(transitionID, 1)
-		v.log(LogInformational, "DAVE Welcome processed, waiting for execute_transition to derive keys")
+		dave.HandleExecuteTransition(transitionID)
+		v.log(LogInformational, "DAVE encryption activated after Welcome")
 
 		v.sendDAVEReadyForTransition(transitionID)
 
