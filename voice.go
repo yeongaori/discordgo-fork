@@ -196,7 +196,7 @@ func (v *VoiceConnection) AddHandler(h VoiceSpeakingUpdateHandler) {
 type VoiceSpeakingUpdate struct {
 	UserID   string `json:"user_id"`
 	SSRC     int    `json:"ssrc"`
-	Speaking bool   `json:"speaking"`
+	Speaking int    `json:"speaking"`
 }
 
 // ------------------------------------------------------------------------------------------------
