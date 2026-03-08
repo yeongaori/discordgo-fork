@@ -44,12 +44,7 @@ func (d *DAVESession) ResetForReWelcome() ([]byte, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.active = false
-	d.senderKey = nil
-	d.frameCipher = nil
 	d.exporterSecret = nil
-	d.ratchetBaseSecret = nil
-	d.currentGeneration = 0
 	d.hasPendingKey = false
 
 	return d.generateKeyPackageLocked()
@@ -114,15 +109,27 @@ func (d *DAVESession) HandleExecuteTransition(transitionID uint16) error {
 	}
 
 	if d.pendingVersion > 0 {
+		derivedNewKey := false
 		if d.hasPendingKey && d.exporterSecret != nil {
 			if err := d.deriveSenderKeyLocked(); err != nil {
 				return err
 			}
 			d.hasPendingKey = false
+			derivedNewKey = true
 		}
 		if d.senderKey == nil {
 			return nil
 		}
+
+		if !derivedNewKey && !d.hasPendingKey {
+			d.active = false
+			d.senderKey = nil
+			d.frameCipher = nil
+			d.ratchetBaseSecret = nil
+			d.currentGeneration = 0
+			return nil
+		}
+
 		d.active = true
 	} else {
 		d.active = false

@@ -93,6 +93,8 @@ type VoiceConnection struct {
 
 	dave *DAVESession
 
+	pendingReWelcome bool
+
 	voiceSpeakingUpdateHandlers []VoiceSpeakingUpdateHandler
 
 	seqAck int // for heartbeat and resume
@@ -688,6 +690,10 @@ func (v *VoiceConnection) onEvent(ctx context.Context, binary bool, message []by
 			v.log(LogInformational, "resumed voice websocket")
 			return
 
+		case 13: // Client Disconnect
+			v.log(LogDebug, "user disconnected: %s", string(e.RawData))
+			return
+
 		case 21: // DAVE prepare_transition
 			v.handleDAVEPrepareTransition(e.RawData)
 			return
@@ -1145,16 +1151,18 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 			return
 		}
 
-		dave.HandlePrepareTransition(transitionID, 1)
-		v.sendDAVEReadyForTransition(transitionID)
+		v.sendDAVEInvalidCommitWelcome(transitionID)
 
-		kpData, err := dave.GenerateKeyPackage()
+		kpData, err := dave.ResetForReWelcome()
 		if err != nil {
-			v.log(LogError, "DAVE key package generation for re-Welcome failed: %s", err)
+			v.log(LogError, "DAVE reset for re-Welcome failed: %s", err)
 			return
 		}
 		v.sendDAVEKeyPackageBinary(kpData)
-		v.sendDAVEInvalidCommitWelcome(transitionID)
+
+		v.Cond.L.Lock()
+		v.pendingReWelcome = true
+		v.Cond.L.Unlock()
 
 	case 30:
 		if len(payload) < 2 {
@@ -1184,8 +1192,7 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 		}
 
 		dave.HandlePrepareTransition(transitionID, 1)
-		dave.HandleExecuteTransition(transitionID)
-		v.log(LogInformational, "DAVE encryption activated after Welcome")
+		v.log(LogInformational, "DAVE encryption prepared after Welcome")
 
 		v.sendDAVEReadyForTransition(transitionID)
 
@@ -1232,6 +1239,15 @@ func (v *VoiceConnection) handleDAVEExecuteTransition(data json.RawMessage) {
 			return
 		}
 		v.log(LogInformational, "DAVE execute_transition id=%d active=%v", msg.TransitionID, dave.IsActive())
+
+		v.Cond.L.Lock()
+		pending := v.pendingReWelcome
+		v.pendingReWelcome = false
+		v.Cond.L.Unlock()
+
+		if !pending {
+			v.sendDAVEReadyForTransition(msg.TransitionID)
+		}
 	}
 }
 
