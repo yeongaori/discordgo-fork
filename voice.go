@@ -954,8 +954,20 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		}
 
 		v.Cond.L.Lock()
+		daveEnabled := v.dave != nil
+		daveActive := daveEnabled && v.dave.IsActive()
 		speaking := v.speaking
 		v.Cond.L.Unlock()
+
+		if daveEnabled && !daveActive {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			continue
+		}
+
 		if !speaking {
 			err := v.Speaking(true)
 			if err != nil {
@@ -967,9 +979,6 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		binary.BigEndian.PutUint16(udpHeader[2:], sequence)
 		binary.BigEndian.PutUint32(udpHeader[4:], timestamp)
 
-		v.Cond.L.Lock()
-		daveActive := v.dave != nil && v.dave.IsActive()
-		v.Cond.L.Unlock()
 		if daveActive {
 			encrypted, err := v.dave.EncryptFrame(recvbuf)
 			if err != nil {
