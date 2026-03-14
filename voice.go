@@ -518,7 +518,7 @@ func (v *VoiceConnection) websocket(ctx context.Context, endpoint string, token 
 			}
 
 			// Pass received message to voice event handler
-			go v.onEvent(ctx, messageType == websocket.BinaryMessage, message)
+			v.onEvent(ctx, messageType == websocket.BinaryMessage, message)
 		}
 	}
 
@@ -954,19 +954,9 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		}
 
 		v.Cond.L.Lock()
-		daveEnabled := v.dave != nil
-		daveActive := daveEnabled && v.dave.IsActive()
+		daveActive := v.dave != nil && v.dave.IsActive()
 		speaking := v.speaking
 		v.Cond.L.Unlock()
-
-		if daveEnabled && !daveActive {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-			continue
-		}
 
 		if !speaking {
 			err := v.Speaking(true)
