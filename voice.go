@@ -954,7 +954,7 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		}
 
 		v.Cond.L.Lock()
-		daveActive := v.dave != nil && v.dave.IsActive()
+		daveActive := v.dave != nil && v.dave.CanEncrypt()
 		speaking := v.speaking
 		v.Cond.L.Unlock()
 

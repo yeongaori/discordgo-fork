@@ -229,6 +229,12 @@ func (d *DAVESession) IsActive() bool {
 	return d.active
 }
 
+func (d *DAVESession) CanEncrypt() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.frameCipher != nil
+}
+
 func (d *DAVESession) Reset() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
