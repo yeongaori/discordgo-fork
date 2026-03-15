@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+
+	"github.com/bwmarrin/discordgo/mls"
 )
 
 type DAVESession struct {
@@ -25,7 +27,7 @@ type DAVESession struct {
 	currentGeneration uint32
 	hasPendingKey     bool
 
-	kpBundle *mlsKeyPackageBundle
+	kpBundle *mls.KeyPackageBundle
 }
 
 func NewDAVESession(userID string) *DAVESession {
@@ -51,12 +53,19 @@ func (d *DAVESession) ResetForReWelcome() ([]byte, error) {
 }
 
 func (d *DAVESession) generateKeyPackageLocked() ([]byte, error) {
-	bundle, err := mlsGenerateKeyPackage(d.userID)
+	userIDNum, err := strconv.ParseUint(d.userID, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parsing user ID for credential: %w", err)
+	}
+	identity := make([]byte, 8)
+	binary.BigEndian.PutUint64(identity, userIDNum)
+
+	bundle, err := mls.GenerateKeyPackage(identity)
 	if err != nil {
 		return nil, fmt.Errorf("generating key package: %w", err)
 	}
 	d.kpBundle = bundle
-	return bundle.serialized, nil
+	return bundle.Serialized, nil
 }
 
 func (d *DAVESession) HandleExternalSenderPackage(data []byte) error {
@@ -73,13 +82,13 @@ func (d *DAVESession) HandleWelcome(data []byte) error {
 		return fmt.Errorf("no key package generated")
 	}
 
-	result, err := mlsProcessWelcome(data, d.kpBundle)
+	result, err := mls.ProcessWelcome(data, d.kpBundle)
 	if err != nil {
 		return fmt.Errorf("processing welcome: %w", err)
 	}
 
-	d.exporterSecret = result.exporterSecret
-	d.epoch = result.epoch
+	d.exporterSecret = result.ExporterSecret
+	d.epoch = result.Epoch
 	d.hasPendingKey = true
 	return nil
 }
@@ -171,7 +180,7 @@ func (d *DAVESession) deriveSenderKeyLocked() error {
 	context := make([]byte, 8)
 	binary.LittleEndian.PutUint64(context, userIDNum)
 
-	baseSecret, err := mlsExport(d.exporterSecret, daveExportLabel, context, daveKeySize)
+	baseSecret, err := mls.Export(d.exporterSecret, daveExportLabel, context, daveKeySize)
 	if err != nil {
 		return fmt.Errorf("exporting base secret: %w", err)
 	}

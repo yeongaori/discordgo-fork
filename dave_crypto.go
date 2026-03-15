@@ -4,6 +4,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
+
+	"github.com/bwmarrin/discordgo/mls"
 )
 
 const (
@@ -68,7 +70,7 @@ func hashRatchetGetKey(baseSecret []byte, generation uint32) ([]byte, error) {
 	for i := uint32(0); i < generation; i++ {
 		genCtx := make([]byte, 4)
 		binary.BigEndian.PutUint32(genCtx, i)
-		next, err := mlsExpandWithLabel(secret, "secret", genCtx, 32)
+		next, err := mls.ExpandWithLabel(secret, "secret", genCtx, 32)
 		if err != nil {
 			return nil, err
 		}
@@ -76,5 +78,5 @@ func hashRatchetGetKey(baseSecret []byte, generation uint32) ([]byte, error) {
 	}
 	genCtx := make([]byte, 4)
 	binary.BigEndian.PutUint32(genCtx, generation)
-	return mlsExpandWithLabel(secret, "key", genCtx, 16)
+	return mls.ExpandWithLabel(secret, "key", genCtx, 16)
 }
