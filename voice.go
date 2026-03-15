@@ -1278,6 +1278,22 @@ func (v *VoiceConnection) handleDAVEPrepareEpoch(ctx context.Context, data json.
 	v.sendDAVEKeyPackageBinary(kpData)
 }
 
+func (v *VoiceConnection) RekeyDAVE() {
+	v.Cond.L.Lock()
+	dave := v.dave
+	v.Cond.L.Unlock()
+	if dave == nil {
+		return
+	}
+
+	kpData, err := dave.ResetForReWelcome()
+	if err != nil {
+		v.log(LogError, "DAVE rekey failed: %s", err)
+		return
+	}
+	v.sendDAVEKeyPackageBinary(kpData)
+}
+
 func (v *VoiceConnection) sendDAVEKeyPackageBinary(kpData []byte) {
 	v.log(LogInformational, "DAVE sending key package (%d bytes)", len(kpData))
 	binMsg := make([]byte, 1+len(kpData))
