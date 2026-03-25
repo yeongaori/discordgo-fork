@@ -38,6 +38,8 @@ var ErrWSNotFound = errors.New("no websocket connection exists")
 // more than the total shard count
 var ErrWSShardBounds = errors.New("ShardID must be less than ShardCount")
 
+var errReconnect = errors.New("reconnect required by gateway")
+
 type resumePacket struct {
 	Op   int `json:"op"`
 	Data struct {
@@ -258,7 +260,12 @@ func (s *Session) listen(wsConn *websocket.Conn, listening <-chan interface{}) {
 			return
 
 		default:
-			s.onEvent(messageType, message)
+			_, err := s.onEvent(messageType, message)
+			if errors.Is(err, errReconnect) {
+				s.CloseWithCode(websocket.CloseServiceRestart)
+				s.reconnect()
+				return
+			}
 
 		}
 	}
@@ -618,17 +625,14 @@ func (s *Session) onEvent(messageType int, message []byte) (*Event, error) {
 	// Reconnect
 	// Must immediately disconnect from gateway and reconnect to new gateway.
 	if e.Operation == 7 {
-		s.log(LogInformational, "Closing and reconnecting in response to Op7")
-		s.CloseWithCode(websocket.CloseServiceRestart)
-		s.reconnect()
-		return e, nil
+		s.log(LogInformational, "Received Op 7 (Reconnect) from gateway")
+		return e, errReconnect
 	}
 
 	// Invalid Session
 	// Must respond with a Identify packet.
 	if e.Operation == 9 {
-		s.log(LogInformational, "Closing and reconnecting in response to Op9")
-		s.CloseWithCode(websocket.CloseServiceRestart)
+		s.log(LogInformational, "Received Op 9 (Invalid Session) from gateway")
 
 		var resumable bool
 		if err := json.Unmarshal(e.RawData, &resumable); err != nil {
@@ -643,8 +647,7 @@ func (s *Session) onEvent(messageType int, message []byte) (*Event, error) {
 			atomic.StoreInt64(s.sequence, 0)
 		}
 
-		s.reconnect()
-		return e, nil
+		return e, errReconnect
 	}
 
 	if e.Operation == 10 {
