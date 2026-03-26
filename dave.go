@@ -147,11 +147,6 @@ func (d *DAVESession) HandleExecuteTransition(transitionID uint16) error {
 		}
 
 		if !derivedNewKey && !d.hasPendingKey {
-			d.active = false
-			d.senderKey = nil
-			d.frameCipher = nil
-			d.ratchetBaseSecret = nil
-			d.currentGeneration = 0
 			return nil
 		}
 
@@ -363,7 +358,7 @@ func (d *DAVESession) clearReceiversLocked() {
 func (d *DAVESession) CanEncrypt() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.frameCipher != nil
+	return d.active && d.frameCipher != nil
 }
 
 func (d *DAVESession) Reset() {
