@@ -104,6 +104,15 @@ type VoiceConnection struct {
 	seqAck int // for heartbeat and resume
 }
 
+// DeadChannel exposes the close notification channel for callers that need a
+// stable exported liveness signal without reflecting on VoiceConnection internals.
+func (v *VoiceConnection) DeadChannel() <-chan struct{} {
+	if v == nil {
+		return nil
+	}
+	return v.Dead
+}
+
 // VoiceSpeakingUpdateHandler type provides a function definition for the
 // VoiceSpeakingUpdate event
 type VoiceSpeakingUpdateHandler func(vc *VoiceConnection, vs *VoiceSpeakingUpdate)
