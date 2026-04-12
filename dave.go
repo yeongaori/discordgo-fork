@@ -122,6 +122,25 @@ func (d *DAVESession) HandlePrepareTransition(transitionID uint16, protocolVersi
 	d.pendingVersion = protocolVersion
 }
 
+func (d *DAVESession) ActivatePreparedTransition(transitionID uint16) error {
+	d.mu.Lock()
+	if transitionID != d.pendingTransitionID {
+		if d.senderKey != nil {
+			d.active = true
+		}
+		d.mu.Unlock()
+		return nil
+	}
+	if d.pendingVersion > 0 && d.senderKey != nil && d.frameCipher != nil {
+		d.active = true
+		d.hasPendingKey = false
+		d.mu.Unlock()
+		return nil
+	}
+	d.mu.Unlock()
+	return d.HandleExecuteTransition(transitionID)
+}
+
 func (d *DAVESession) HandleExecuteTransition(transitionID uint16) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -337,10 +356,10 @@ func (d *DAVESession) createReceiverLocked(ssrc uint32, userID string) (*daveRec
 	}
 
 	recv := &daveReceiver{
-		userID:     userID,
-		baseSecret: baseSecret,
-		key:        key,
-		aesBlock:   block,
+		userID:      userID,
+		baseSecret:  baseSecret,
+		key:         key,
+		aesBlock:    block,
 		frameCipher: fc,
 	}
 
