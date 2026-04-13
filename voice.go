@@ -104,6 +104,15 @@ type VoiceConnection struct {
 	seqAck int // for heartbeat and resume
 }
 
+// DeadChannel exposes the close notification channel for callers that need a
+// stable exported liveness signal without reflecting on VoiceConnection internals.
+func (v *VoiceConnection) DeadChannel() <-chan struct{} {
+	if v == nil {
+		return nil
+	}
+	return v.Dead
+}
+
 // VoiceSpeakingUpdateHandler type provides a function definition for the
 // VoiceSpeakingUpdate event
 type VoiceSpeakingUpdateHandler func(vc *VoiceConnection, vs *VoiceSpeakingUpdate)
@@ -973,7 +982,12 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 
 	v.Cond.L.Lock()
 	udpConn := v.udpConn
+	opusCap := 0
+	if v.OpusSend != nil {
+		opusCap = cap(v.OpusSend)
+	}
 	v.Cond.L.Unlock()
+	v.log(LogInformational, "opus sender starting udp_ready=%v opus_cap=%d", udpConn != nil, opusCap)
 
 	var sequence uint16
 	var timestamp uint32
@@ -1007,12 +1021,20 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		v.Cond.L.Lock()
 		daveActive := v.dave != nil && v.dave.CanEncrypt()
 		speaking := v.speaking
+		opusQueued := 0
+		if v.OpusSend != nil {
+			opusQueued = len(v.OpusSend)
+		}
 		v.Cond.L.Unlock()
+		sampleLog := i < 5 || i%50 == 0
+		if sampleLog {
+			v.log(LogDebug, "opus sender dequeued idx=%d opus_len=%d queued=%d seq=%d timestamp=%d dave_active=%v speaking=%v", i, len(recvbuf), opusQueued, sequence, timestamp, daveActive, speaking)
+		}
 
 		if !speaking {
 			err := v.Speaking(true)
 			if err != nil {
-				v.log(LogError, "error sending speaking packet, %s", err)
+				v.log(LogError, "error sending speaking packet idx=%d seq=%d timestamp=%d, %s", i, sequence, timestamp, err)
 			}
 		}
 
@@ -1023,9 +1045,12 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		if daveActive {
 			encrypted, err := v.dave.EncryptFrame(recvbuf)
 			if err != nil {
-				v.log(LogError, "DAVE encrypt error: %s", err)
+				v.log(LogError, "DAVE encrypt error idx=%d seq=%d timestamp=%d opus_len=%d: %s", i, sequence, timestamp, len(recvbuf), err)
 			} else {
 				recvbuf = encrypted
+				if sampleLog {
+					v.log(LogDebug, "opus sender encrypted idx=%d encrypted_len=%d seq=%d timestamp=%d", i, len(recvbuf), sequence, timestamp)
+				}
 			}
 		}
 
@@ -1048,9 +1073,13 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		_, err := udpConn.Write(sendbuf)
 
 		if err != nil {
+			v.log(LogError, "udp write failed idx=%d seq=%d timestamp=%d opus_len=%d udp_len=%d dave_active=%v: %s", i, sequence, timestamp, len(recvbuf), len(sendbuf), daveActive, err)
 			err := fmt.Errorf("udp write error, %w", err)
 			v.failure(err)
 			return
+		}
+		if sampleLog {
+			v.log(LogDebug, "udp write ok idx=%d seq=%d timestamp=%d opus_len=%d udp_len=%d dave_active=%v", i, sequence, timestamp, len(recvbuf), len(sendbuf), daveActive)
 		}
 
 		// don't care if it overflows because it is already defined in Go spec
@@ -1254,7 +1283,12 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 		}
 
 		dave.HandlePrepareTransition(transitionID, 1)
+		if err := dave.ActivatePreparedTransition(transitionID); err != nil {
+			v.log(LogError, "DAVE initial transition activation failed: %s", err)
+			return
+		}
 		v.log(LogInformational, "DAVE encryption prepared after Welcome")
+		v.log(LogInformational, "DAVE initial transition activated after Welcome canEncrypt=%v", dave.CanEncrypt())
 
 		v.sendDAVEReadyForTransition(transitionID)
 
