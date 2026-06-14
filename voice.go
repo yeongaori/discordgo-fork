@@ -1033,7 +1033,8 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		}
 
 		v.Cond.L.Lock()
-		daveActive := v.dave != nil && v.dave.CanEncrypt()
+		dave := v.dave
+		daveActive := dave != nil && dave.CanEncrypt()
 		speaking := v.speaking
 		v.Cond.L.Unlock()
 
@@ -1049,7 +1050,7 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		binary.BigEndian.PutUint32(udpHeader[4:], timestamp)
 
 		if daveActive {
-			encrypted, err := v.dave.EncryptFrame(recvbuf)
+			encrypted, err := dave.EncryptFrame(recvbuf)
 			if err != nil {
 				v.log(LogError, "DAVE encrypt error: %s", err)
 			} else {
@@ -1285,6 +1286,13 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 		v.log(LogInformational, "DAVE encryption prepared after Welcome")
 
 		v.sendDAVEReadyForTransition(transitionID)
+
+		// Mark that ready_for_transition has already been sent for this transition
+		// so handleDAVEExecuteTransition does not send it again after execute_transition
+		// arrives (sending it after execute_transition violates the protocol ordering).
+		v.Cond.L.Lock()
+		v.pendingReWelcome = true
+		v.Cond.L.Unlock()
 
 	default:
 		v.log(LogDebug, "DAVE unknown binary opcode %d (%d bytes)", opcode, len(payload))
