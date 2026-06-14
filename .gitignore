@@ -3,3 +3,4 @@
 
 # Environment variables. Useful for examples.
 .env
+CHANGES.md

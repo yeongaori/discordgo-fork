@@ -148,6 +148,34 @@ func (v *VoiceConnection) Speaking(b bool) (err error) {
 	return
 }
 
+// WaitForDAVEReady blocks until DAVE (E2E audio encryption) is ready to encrypt,
+// or until ctx is cancelled/expired. Returns nil immediately if DAVE is not active
+// for this session (dave == nil). Call this after the connection reaches
+// VoiceConnectionStatusReady and before sending audio to OpusSend.
+func (v *VoiceConnection) WaitForDAVEReady(ctx context.Context) error {
+	v.Cond.L.Lock()
+	dave := v.dave
+	v.Cond.L.Unlock()
+
+	if dave == nil {
+		return nil
+	}
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		if dave.CanEncrypt() {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 // Disconnect requests disconnect from this voice channel and wait for disconencted
 func (v *VoiceConnection) Disconnect(ctx context.Context) error {
 
