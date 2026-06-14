@@ -358,7 +358,7 @@ func (d *DAVESession) clearReceiversLocked() {
 func (d *DAVESession) CanEncrypt() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.active && d.frameCipher != nil
+	return d.frameCipher != nil
 }
 
 func (d *DAVESession) Reset() {

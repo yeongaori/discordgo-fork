@@ -1293,6 +1293,7 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 		v.log(LogInformational, "DAVE encryption prepared after Welcome")
 
 		v.sendDAVEReadyForTransition(transitionID)
+		v.Cond.Broadcast() // wake WaitForDAVEReady — sender key is now derived
 
 		// Mark that ready_for_transition has already been sent for this transition
 		// so handleDAVEExecuteTransition does not send it again after execute_transition
