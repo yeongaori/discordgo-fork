@@ -161,19 +161,26 @@ func (v *VoiceConnection) WaitForDAVEReady(ctx context.Context) error {
 		return nil
 	}
 
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		if dave.CanEncrypt() {
-			return nil
-		}
+	// Ensure Cond.Wait is woken up if ctx expires.
+	stopWake := make(chan struct{})
+	defer close(stopWake)
+	go func() {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
+			v.Cond.Broadcast()
+		case <-stopWake:
 		}
+	}()
+
+	v.Cond.L.Lock()
+	defer v.Cond.L.Unlock()
+	for !dave.CanEncrypt() {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		v.Cond.Wait()
 	}
+	return nil
 }
 
 // Disconnect requests disconnect from this voice channel and wait for disconencted
@@ -1341,6 +1348,7 @@ func (v *VoiceConnection) handleDAVEExecuteTransition(data json.RawMessage) {
 		v.Cond.L.Lock()
 		pending := v.pendingReWelcome
 		v.pendingReWelcome = false
+		v.Cond.Broadcast() // wake WaitForDAVEReady
 		v.Cond.L.Unlock()
 
 		if !pending {
