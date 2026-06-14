@@ -1,8 +1,5 @@
-# DiscordGo yeongaori fork
+# DiscordGo A-Murchison fork
 
-This is fork of [ozraru/discordgo](https://github.com/ozraru/discordgo).
+This is fork of [yeongaori/discordgo](https://github.com/yeongaori/discordgo).
 
-Original repo of this project: [bwmarrin/discordgo](https://github.com/bwmarrin/discordgo).
-
-
-This fork focuses on stability and simply “working well.”
+Fixed streaming audio to discord
