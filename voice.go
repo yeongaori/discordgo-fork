@@ -549,7 +549,7 @@ func (v *VoiceConnection) websocket(ctx context.Context, endpoint string, token 
 
 				// 4015 indicates that voice server crashed so we should reconnect.
 				// 1006 (CloseAbnormalClosure) indicates a network-level disruption
-				// (unexpected EOF, TCP reset, etc.) — also recoverable via reconnect.
+				// (unexpected EOF, TCP reset, etc.) - also recoverable via reconnect.
 				// Other code is our bad, should never happen, we stop reconnecting to avoid loop.
 				if websocket.IsUnexpectedCloseError(err, 4015, websocket.CloseAbnormalClosure) {
 					err := fmt.Errorf("voice websocket closed, %w", err)
@@ -1293,7 +1293,7 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 		v.log(LogInformational, "DAVE encryption prepared after Welcome")
 
 		v.sendDAVEReadyForTransition(transitionID)
-		v.Cond.Broadcast() // wake WaitForDAVEReady — sender key is now derived
+		v.Cond.Broadcast() // wake WaitForDAVEReady - sender key is now derived
 
 		// Mark that ready_for_transition has already been sent for this transition
 		// so handleDAVEExecuteTransition does not send it again after execute_transition
