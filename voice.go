@@ -104,6 +104,15 @@ type VoiceConnection struct {
 	seqAck int // for heartbeat and resume
 }
 
+// DeadChannel exposes the close notification channel for callers that need a
+// stable exported liveness signal without reflecting on VoiceConnection internals.
+func (v *VoiceConnection) DeadChannel() <-chan struct{} {
+	if v == nil {
+		return nil
+	}
+	return v.Dead
+}
+
 // VoiceSpeakingUpdateHandler type provides a function definition for the
 // VoiceSpeakingUpdate event
 type VoiceSpeakingUpdateHandler func(vc *VoiceConnection, vs *VoiceSpeakingUpdate)
@@ -146,6 +155,36 @@ func (v *VoiceConnection) Speaking(b bool) (err error) {
 	v.speaking = b
 
 	return
+}
+
+func (v *VoiceConnection) WaitForDAVEReady(ctx context.Context) error {
+	v.Cond.L.Lock()
+	dave := v.dave
+	v.Cond.L.Unlock()
+
+	if dave == nil {
+		return nil
+	}
+
+	stopWake := make(chan struct{})
+	defer close(stopWake)
+	go func() {
+		select {
+		case <-ctx.Done():
+			v.Cond.Broadcast()
+		case <-stopWake:
+		}
+	}()
+
+	v.Cond.L.Lock()
+	defer v.Cond.L.Unlock()
+	for !dave.CanEncrypt() {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		v.Cond.Wait()
+	}
+	return nil
 }
 
 // Disconnect requests disconnect from this voice channel and wait for disconencted
@@ -973,7 +1012,12 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 
 	v.Cond.L.Lock()
 	udpConn := v.udpConn
+	opusCap := 0
+	if v.OpusSend != nil {
+		opusCap = cap(v.OpusSend)
+	}
 	v.Cond.L.Unlock()
+	v.log(LogInformational, "opus sender starting udp_ready=%v opus_cap=%d", udpConn != nil, opusCap)
 
 	var sequence uint16
 	var timestamp uint32
@@ -1005,14 +1049,23 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		}
 
 		v.Cond.L.Lock()
-		daveActive := v.dave != nil && v.dave.CanEncrypt()
+		dave := v.dave
+		daveActive := dave != nil && dave.CanEncrypt()
 		speaking := v.speaking
+		opusQueued := 0
+		if v.OpusSend != nil {
+			opusQueued = len(v.OpusSend)
+		}
 		v.Cond.L.Unlock()
+		sampleLog := i < 5 || i%50 == 0
+		if sampleLog {
+			v.log(LogDebug, "opus sender dequeued idx=%d opus_len=%d queued=%d seq=%d timestamp=%d dave_active=%v speaking=%v", i, len(recvbuf), opusQueued, sequence, timestamp, daveActive, speaking)
+		}
 
 		if !speaking {
 			err := v.Speaking(true)
 			if err != nil {
-				v.log(LogError, "error sending speaking packet, %s", err)
+				v.log(LogError, "error sending speaking packet idx=%d seq=%d timestamp=%d, %s", i, sequence, timestamp, err)
 			}
 		}
 
@@ -1021,11 +1074,14 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		binary.BigEndian.PutUint32(udpHeader[4:], timestamp)
 
 		if daveActive {
-			encrypted, err := v.dave.EncryptFrame(recvbuf)
+			encrypted, err := dave.EncryptFrame(recvbuf)
 			if err != nil {
-				v.log(LogError, "DAVE encrypt error: %s", err)
+				v.log(LogError, "DAVE encrypt error idx=%d seq=%d timestamp=%d opus_len=%d: %s", i, sequence, timestamp, len(recvbuf), err)
 			} else {
 				recvbuf = encrypted
+				if sampleLog {
+					v.log(LogDebug, "opus sender encrypted idx=%d encrypted_len=%d seq=%d timestamp=%d", i, len(recvbuf), sequence, timestamp)
+				}
 			}
 		}
 
@@ -1048,9 +1104,13 @@ func (v *VoiceConnection) opusSender(ctx context.Context, rate, size int) {
 		_, err := udpConn.Write(sendbuf)
 
 		if err != nil {
+			v.log(LogError, "udp write failed idx=%d seq=%d timestamp=%d opus_len=%d udp_len=%d dave_active=%v: %s", i, sequence, timestamp, len(recvbuf), len(sendbuf), daveActive, err)
 			err := fmt.Errorf("udp write error, %w", err)
 			v.failure(err)
 			return
+		}
+		if sampleLog {
+			v.log(LogDebug, "udp write ok idx=%d seq=%d timestamp=%d opus_len=%d udp_len=%d dave_active=%v", i, sequence, timestamp, len(recvbuf), len(sendbuf), daveActive)
 		}
 
 		// don't care if it overflows because it is already defined in Go spec
@@ -1254,9 +1314,20 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 		}
 
 		dave.HandlePrepareTransition(transitionID, 1)
+		if err := dave.ActivatePreparedTransition(transitionID); err != nil {
+			v.log(LogError, "DAVE initial transition activation failed: %s", err)
+			return
+		}
 		v.log(LogInformational, "DAVE encryption prepared after Welcome")
+		v.log(LogInformational, "DAVE initial transition activated after Welcome canEncrypt=%v", dave.CanEncrypt())
+
+		v.Cond.Broadcast()
 
 		v.sendDAVEReadyForTransition(transitionID)
+
+		v.Cond.L.Lock()
+		v.pendingReWelcome = true
+		v.Cond.L.Unlock()
 
 	default:
 		v.log(LogDebug, "DAVE unknown binary opcode %d (%d bytes)", opcode, len(payload))
@@ -1301,6 +1372,8 @@ func (v *VoiceConnection) handleDAVEExecuteTransition(data json.RawMessage) {
 			return
 		}
 		v.log(LogInformational, "DAVE execute_transition id=%d canEncrypt=%v", msg.TransitionID, dave.CanEncrypt())
+
+		v.Cond.Broadcast()
 
 		v.Cond.L.Lock()
 		pending := v.pendingReWelcome
