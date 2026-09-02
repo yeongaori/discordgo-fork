@@ -642,9 +642,7 @@ func (s *Session) onEvent(messageType int, message []byte) (*Event, error) {
 
 		if !resumable {
 			s.log(LogInformational, "Gateway session is not resumable, discarding its information")
-			s.resumeGatewayURL = ""
-			s.sessionID = ""
-			atomic.StoreInt64(s.sequence, 0)
+			s.discardResumeState()
 		}
 
 		return e, errReconnect
@@ -882,6 +880,14 @@ func (s *Session) identify() error {
 	return err
 }
 
+const maxResumeAttempts = 3
+
+func (s *Session) discardResumeState() {
+	s.resumeGatewayURL = ""
+	s.sessionID = ""
+	atomic.StoreInt64(s.sequence, 0)
+}
+
 func (s *Session) reconnect() {
 
 	s.log(LogInformational, "called")
@@ -891,6 +897,7 @@ func (s *Session) reconnect() {
 	if s.ShouldReconnectOnError {
 
 		wait := time.Duration(1)
+		failures := 0
 
 		for {
 			s.log(LogInformational, "trying to reconnect to gateway")
@@ -909,6 +916,12 @@ func (s *Session) reconnect() {
 			}
 
 			s.log(LogError, "error reconnecting to gateway, %s", err)
+
+			failures++
+			if failures >= maxResumeAttempts && s.sessionID != "" {
+				s.log(LogWarning, "discarding resume information after %d failed reconnects, next attempt will identify", failures)
+				s.discardResumeState()
+			}
 
 			<-time.After(wait * time.Second)
 			wait *= 2
