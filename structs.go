@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"regexp"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -134,6 +135,10 @@ type Session struct {
 
 	// used to make sure gateway websocket writes do not happen concurrently
 	wsMutex sync.Mutex
+
+	closeRequested atomic.Bool
+	handshakeMu    sync.Mutex
+	abortHandshake func()
 }
 
 // ApplicationIntegrationType dictates where application can be installed and its available interaction contexts.

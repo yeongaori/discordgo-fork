@@ -38,6 +38,10 @@ var ErrWSNotFound = errors.New("no websocket connection exists")
 // more than the total shard count
 var ErrWSShardBounds = errors.New("ShardID must be less than ShardCount")
 
+var errSessionClosed = errors.New("session closed")
+
+var gatewayHandshakeTimeout = 30 * time.Second
+
 var errReconnect = errors.New("reconnect required by gateway")
 
 type resumePacket struct {
@@ -52,6 +56,38 @@ type resumePacket struct {
 // Open creates a websocket connection to Discord.
 // See: https://discord.com/developers/docs/topics/gateway#connecting
 func (s *Session) Open() error {
+	s.closeRequested.Store(false)
+	return s.open()
+}
+
+func (s *Session) startHandshake(abort func()) bool {
+	s.handshakeMu.Lock()
+	defer s.handshakeMu.Unlock()
+
+	if s.closeRequested.Load() {
+		return false
+	}
+	s.abortHandshake = abort
+	return true
+}
+
+func (s *Session) endHandshake() {
+	s.handshakeMu.Lock()
+	defer s.handshakeMu.Unlock()
+
+	s.abortHandshake = nil
+}
+
+func (s *Session) cancelHandshake() {
+	s.handshakeMu.Lock()
+	defer s.handshakeMu.Unlock()
+
+	if s.abortHandshake != nil {
+		s.abortHandshake()
+	}
+}
+
+func (s *Session) open() error {
 	s.log(LogInformational, "called")
 
 	var err error
@@ -66,6 +102,19 @@ func (s *Session) Open() error {
 		return ErrWSAlreadyOpen
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var handshakeConn *websocket.Conn
+	if !s.startHandshake(func() {
+		cancel()
+		if handshakeConn != nil {
+			handshakeConn.Close()
+		}
+	}) {
+		return errSessionClosed
+	}
+	defer s.endHandshake()
+
 	sequence := atomic.LoadInt64(s.sequence)
 
 	var gateway string
@@ -75,7 +124,7 @@ func (s *Session) Open() error {
 		gateway = s.resumeGatewayURL
 	} else {
 		if s.gateway == "" {
-			s.gateway, err = s.Gateway()
+			s.gateway, err = s.Gateway(WithContext(ctx))
 			if err != nil {
 				return err
 			}
@@ -91,7 +140,7 @@ func (s *Session) Open() error {
 	s.log(LogInformational, "connecting to gateway %s", gateway)
 	header := http.Header{}
 	header.Add("accept-encoding", "zlib")
-	s.wsConn, _, err = s.Dialer.Dial(gateway, header)
+	s.wsConn, _, err = s.Dialer.DialContext(ctx, gateway, header)
 	if err != nil {
 		s.log(LogError, "error connecting to gateway %s, %s", s.gateway, err)
 		s.gateway = "" // clear cached gateway
@@ -112,6 +161,17 @@ func (s *Session) Open() error {
 			s.wsConn = nil
 		}
 	}()
+
+	s.handshakeMu.Lock()
+	handshakeConn = s.wsConn
+	s.handshakeMu.Unlock()
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+
+	if err = s.wsConn.SetReadDeadline(time.Now().Add(gatewayHandshakeTimeout)); err != nil {
+		return err
+	}
 
 	// The first response from Discord should be an Op 10 (Hello) Packet.
 	// When processed by onEvent the heartbeat goroutine will be started.
@@ -195,6 +255,10 @@ func (s *Session) Open() error {
 	}
 	s.log(LogInformational, "First Packet:\n%#v\n", e)
 
+	if err = s.wsConn.SetReadDeadline(time.Time{}); err != nil {
+		return err
+	}
+
 	s.log(LogInformational, "We are now connected to Discord, emitting connect event")
 	s.handleEvent(connectEventType, &Connect{})
 
@@ -242,7 +306,7 @@ func (s *Session) listen(wsConn *websocket.Conn, listening <-chan interface{}) {
 				s.log(LogWarning, "error reading from gateway %s websocket, %s", s.gateway, err)
 				// There has been an error reading, close the websocket so that
 				// OnDisconnect event is emitted.
-				err := s.Close()
+				err := s.closeGateway(websocket.CloseNormalClosure)
 				if err != nil {
 					s.log(LogWarning, "error closing session connection, %s", err)
 				}
@@ -262,7 +326,7 @@ func (s *Session) listen(wsConn *websocket.Conn, listening <-chan interface{}) {
 		default:
 			_, err := s.onEvent(messageType, message)
 			if errors.Is(err, errReconnect) {
-				s.CloseWithCode(websocket.CloseServiceRestart)
+				s.closeGateway(websocket.CloseServiceRestart)
 				s.reconnect()
 				return
 			}
@@ -321,7 +385,7 @@ func (s *Session) heartbeat(wsConn *websocket.Conn, listening <-chan interface{}
 			} else {
 				s.log(LogError, "haven't gotten a heartbeat ACK in %v, triggering a reconnection", time.Now().UTC().Sub(last))
 			}
-			s.Close()
+			s.closeGateway(websocket.CloseNormalClosure)
 			s.reconnect()
 			return
 		}
@@ -915,9 +979,14 @@ func (s *Session) reconnect() {
 		failures := 0
 
 		for {
+			if s.closeRequested.Load() {
+				s.log(LogInformational, "session closed, no longer reconnecting")
+				return
+			}
+
 			s.log(LogInformational, "trying to reconnect to gateway")
 
-			err = s.Open()
+			err = s.open()
 			if err == nil {
 				s.log(LogInformational, "successfully reconnected to gateway")
 				return
@@ -927,6 +996,11 @@ func (s *Session) reconnect() {
 			// just break out of the reconnect loop
 			if err == ErrWSAlreadyOpen {
 				s.log(LogInformational, "Websocket already exists, no need to reconnect")
+				return
+			}
+
+			if errors.Is(err, errSessionClosed) || s.closeRequested.Load() {
+				s.log(LogInformational, "session closed, no longer reconnecting")
 				return
 			}
 
@@ -957,6 +1031,12 @@ func (s *Session) Close() error {
 // listening/heartbeat goroutines.
 // TODO: Add support for Voice WS/UDP connections
 func (s *Session) CloseWithCode(closeCode int) (err error) {
+	s.closeRequested.Store(true)
+	s.cancelHandshake()
+	return s.closeGateway(closeCode)
+}
+
+func (s *Session) closeGateway(closeCode int) (err error) {
 
 	s.log(LogInformational, "called")
 	s.Lock()

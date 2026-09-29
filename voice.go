@@ -102,7 +102,13 @@ type VoiceConnection struct {
 	voiceSpeakingUpdateHandlers []VoiceSpeakingUpdateHandler
 
 	seqAck int // for heartbeat and resume
+
+	lastHeartbeatAck time.Time
 }
+
+var voiceHandshakeTimeout = 30 * time.Second
+
+const voiceFailedHeartbeatAcks = 5
 
 // DeadChannel exposes the close notification channel for callers that need a
 // stable exported liveness signal without reflecting on VoiceConnection internals.
@@ -272,7 +278,6 @@ func (v *VoiceConnection) failure(err error) {
 	v.log(LogDebug, "voice struct: %#v\n", v)
 	v.Cond.L.Lock()
 	if v.Err == nil {
-		v.Status = VoiceConnectionStatusDead
 		v.Err = err
 		v.Cond.Broadcast()
 	}
@@ -452,6 +457,10 @@ func (v *VoiceConnection) websocket(ctx context.Context, endpoint string, token 
 		v.Cond.L.Lock()
 		v.wsConn = wsConn
 		v.Cond.L.Unlock()
+
+		if err := wsConn.SetReadDeadline(time.Now().Add(voiceHandshakeTimeout)); err != nil {
+			v.log(LogWarning, "failed to set the voice handshake deadline, %s", err)
+		}
 
 		if i == 0 {
 			type voiceHandshakeData struct {
@@ -747,6 +756,9 @@ func (v *VoiceConnection) onEvent(ctx context.Context, binary bool, message []by
 		case 6: // HEARTBEAT response
 			// add code to use this to track latency?
 			v.log(LogDebug, "recieved heartbeat ACK")
+			v.Cond.L.Lock()
+			v.lastHeartbeatAck = time.Now()
+			v.Cond.L.Unlock()
 			return
 
 		case 12: // CLIENT CONNECT
@@ -789,7 +801,13 @@ func (v *VoiceConnection) onEvent(ctx context.Context, binary bool, message []by
 			// Start the voice websocket heartbeat to keep the connection alive
 			v.Cond.L.Lock()
 			wsConn := v.wsConn
+			v.lastHeartbeatAck = time.Now()
 			v.Cond.L.Unlock()
+			if wsConn != nil {
+				if err := wsConn.SetReadDeadline(time.Time{}); err != nil {
+					v.log(LogWarning, "failed to clear the voice handshake deadline, %s", err)
+				}
+			}
 			go v.wsHeartbeat(ctx, wsConn, op8.HeartbeatInterval)
 
 		case 9: // resumed
@@ -845,7 +863,13 @@ func (v *VoiceConnection) wsHeartbeat(ctx context.Context, wsConn *websocket.Con
 		v.log(LogDebug, "sending heartbeat packet")
 		v.Cond.L.Lock()
 		seqAck := v.seqAck
+		lastAck := v.lastHeartbeatAck
 		v.Cond.L.Unlock()
+		if silence := time.Since(lastAck); silence > time.Duration(interval)*time.Millisecond*voiceFailedHeartbeatAcks {
+			v.log(LogError, "haven't gotten a voice heartbeat ACK in %v, reconnecting", silence)
+			wsConn.Close()
+			return
+		}
 		v.wsMu.Lock()
 		err = wsConn.WriteJSON(voiceHeartbeatOp{3, voiceHeartbeatData{time.Now().Unix(), seqAck}})
 		v.wsMu.Unlock()
