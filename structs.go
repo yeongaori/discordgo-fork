@@ -115,6 +115,8 @@ type Session struct {
 	handlers     map[string][]*eventHandlerInstance
 	onceHandlers map[string][]*eventHandlerInstance
 
+	contentIntentWarning sync.Once
+
 	// The websocket connection.
 	wsConn *websocket.Conn
 

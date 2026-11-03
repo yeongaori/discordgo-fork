@@ -199,6 +199,12 @@ func (s *Session) open() error {
 	// connection or Op 6 Resume if we are resuming an existing connection.
 	if s.sessionID == "" && sequence == 0 {
 
+		if s.shouldWarnContentIntent() {
+			s.contentIntentWarning.Do(func() {
+				s.log(LogWarning, "message content intent is missing, message events may not work as expected")
+			})
+		}
+
 		// Send Op 2 Identity Packet
 		err = s.identify()
 		if err != nil {

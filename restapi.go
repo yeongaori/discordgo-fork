@@ -623,23 +623,6 @@ func (s *Session) GuildPreview(guildID string, options ...RequestOption) (st *Gu
 	return
 }
 
-// GuildCreate creates a new Guild
-// name      : A name for the Guild (2-100 characters)
-func (s *Session) GuildCreate(name string, options ...RequestOption) (st *Guild, err error) {
-
-	data := struct {
-		Name string `json:"name"`
-	}{name}
-
-	body, err := s.RequestWithBucketID("POST", EndpointGuildCreate, data, EndpointGuildCreate, options...)
-	if err != nil {
-		return
-	}
-
-	err = unmarshal(body, &st)
-	return
-}
-
 // GuildEdit edits a new Guild
 // guildID   : The ID of a Guild
 // g 		 : A GuildParams struct with the values Name, Region and VerificationLevel defined.
@@ -679,14 +662,6 @@ func (s *Session) GuildEdit(guildID string, g *GuildParams, options ...RequestOp
 	}
 
 	err = unmarshal(body, &st)
-	return
-}
-
-// GuildDelete deletes a Guild.
-// guildID   : The ID of a Guild
-func (s *Session) GuildDelete(guildID string, options ...RequestOption) (err error) {
-
-	_, err = s.RequestWithBucketID("DELETE", EndpointGuild(guildID), nil, EndpointGuild(guildID), options...)
 	return
 }
 
@@ -948,10 +923,6 @@ func (s *Session) GuildMemberNickname(guildID, userID, nickname string, options 
 	data := struct {
 		Nick string `json:"nick"`
 	}{nickname}
-
-	if userID == "@me" {
-		userID += "/nick"
-	}
 
 	_, err = s.RequestWithBucketID("PATCH", EndpointGuildMember(guildID, userID), data, EndpointGuildMember(guildID, ""), options...)
 	return
@@ -1287,40 +1258,6 @@ func (s *Session) GuildIntegrations(guildID string, options ...RequestOption) (s
 	return
 }
 
-// GuildIntegrationCreate creates a Guild Integration.
-// guildID          : The ID of a Guild.
-// integrationType  : The Integration type.
-// integrationID    : The ID of an integration.
-func (s *Session) GuildIntegrationCreate(guildID, integrationType, integrationID string, options ...RequestOption) (err error) {
-
-	data := struct {
-		Type string `json:"type"`
-		ID   string `json:"id"`
-	}{integrationType, integrationID}
-
-	_, err = s.RequestWithBucketID("POST", EndpointGuildIntegrations(guildID), data, EndpointGuildIntegrations(guildID), options...)
-	return
-}
-
-// GuildIntegrationEdit edits a Guild Integration.
-// guildID              : The ID of a Guild.
-// integrationType      : The Integration type.
-// integrationID        : The ID of an integration.
-// expireBehavior	      : The behavior when an integration subscription lapses (see the integration object documentation).
-// expireGracePeriod    : Period (in seconds) where the integration will ignore lapsed subscriptions.
-// enableEmoticons	    : Whether emoticons should be synced for this integration (twitch only currently).
-func (s *Session) GuildIntegrationEdit(guildID, integrationID string, expireBehavior, expireGracePeriod int, enableEmoticons bool, options ...RequestOption) (err error) {
-
-	data := struct {
-		ExpireBehavior    int  `json:"expire_behavior"`
-		ExpireGracePeriod int  `json:"expire_grace_period"`
-		EnableEmoticons   bool `json:"enable_emoticons"`
-	}{expireBehavior, expireGracePeriod, enableEmoticons}
-
-	_, err = s.RequestWithBucketID("PATCH", EndpointGuildIntegration(guildID, integrationID), data, EndpointGuildIntegration(guildID, ""), options...)
-	return
-}
-
 // GuildIntegrationDelete removes the given integration from the Guild.
 // guildID          : The ID of a Guild.
 // integrationID    : The ID of an integration.
@@ -1569,26 +1506,6 @@ func (s *Session) ApplicationEmojiDelete(appID, emojiID string, options ...Reque
 func (s *Session) GuildTemplate(templateCode string, options ...RequestOption) (st *GuildTemplate, err error) {
 
 	body, err := s.RequestWithBucketID("GET", EndpointGuildTemplate(templateCode), nil, EndpointGuildTemplate(templateCode), options...)
-	if err != nil {
-		return
-	}
-
-	err = unmarshal(body, &st)
-	return
-}
-
-// GuildCreateWithTemplate creates a guild based on a GuildTemplate
-// templateCode: The Code of a GuildTemplate
-// name: The name of the guild (2-100) characters
-// icon: base64 encoded 128x128 image for the guild icon
-func (s *Session) GuildCreateWithTemplate(templateCode, name, icon string, options ...RequestOption) (st *Guild, err error) {
-
-	data := struct {
-		Name string `json:"name"`
-		Icon string `json:"icon"`
-	}{name, icon}
-
-	body, err := s.RequestWithBucketID("POST", EndpointGuildTemplate(templateCode), data, EndpointGuildTemplate(templateCode), options...)
 	if err != nil {
 		return
 	}
@@ -2906,18 +2823,6 @@ func (s *Session) ThreadMembers(threadID string, limit int, withMember bool, aft
 	return
 }
 
-// ThreadsActive returns all active threads for specified channel.
-func (s *Session) ThreadsActive(channelID string, options ...RequestOption) (threads *ThreadsList, err error) {
-	var body []byte
-	body, err = s.RequestWithBucketID("GET", EndpointChannelActiveThreads(channelID), nil, EndpointChannelActiveThreads(channelID), options...)
-	if err != nil {
-		return
-	}
-
-	err = unmarshal(body, &threads)
-	return
-}
-
 // GuildThreadsActive returns all active threads for specified guild.
 func (s *Session) GuildThreadsActive(guildID string, options ...RequestOption) (threads *ThreadsList, err error) {
 	var body []byte
@@ -3172,19 +3077,6 @@ func (s *Session) ApplicationCommandPermissions(appID, guildID, cmdID string, op
 // NOTE: Requires OAuth2 token with applications.commands.permissions.update scope
 func (s *Session) ApplicationCommandPermissionsEdit(appID, guildID, cmdID string, permissions *ApplicationCommandPermissionsList, options ...RequestOption) (err error) {
 	endpoint := EndpointApplicationCommandPermissions(appID, guildID, cmdID)
-
-	_, err = s.RequestWithBucketID("PUT", endpoint, permissions, endpoint, options...)
-	return
-}
-
-// ApplicationCommandPermissionsBatchEdit edits the permissions of a batch of commands
-// appID       : The Application ID
-// guildID     : The guild ID to batch edit commands of
-// permissions : A list of permissions paired with a command ID, guild ID, and application ID per application command
-//
-// NOTE: This endpoint has been disabled with updates to command permissions (Permissions v2). Please use ApplicationCommandPermissionsEdit instead.
-func (s *Session) ApplicationCommandPermissionsBatchEdit(appID, guildID string, permissions []*GuildApplicationCommandPermissions, options ...RequestOption) (err error) {
-	endpoint := EndpointApplicationCommandsGuildPermissions(appID, guildID)
 
 	_, err = s.RequestWithBucketID("PUT", endpoint, permissions, endpoint, options...)
 	return

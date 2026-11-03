@@ -14,7 +14,7 @@ package discordgo
 import "strconv"
 
 // APIVersion is the Discord API version used for the REST and Websocket API.
-var APIVersion = "9"
+var APIVersion = "10"
 
 // Known Discord API Endpoints.
 var (
@@ -132,7 +132,6 @@ var (
 
 	EndpointChannel                             = func(cID string) string { return EndpointChannels + cID }
 	EndpointChannelThreads                      = func(cID string) string { return EndpointChannel(cID) + "/threads" }
-	EndpointChannelActiveThreads                = func(cID string) string { return EndpointChannelThreads(cID) + "/active" }
 	EndpointChannelPublicArchivedThreads        = func(cID string) string { return EndpointChannelThreads(cID) + "/archived/public" }
 	EndpointChannelPrivateArchivedThreads       = func(cID string) string { return EndpointChannelThreads(cID) + "/archived/private" }
 	EndpointChannelJoinedPrivateArchivedThreads = func(cID string) string { return EndpointChannel(cID) + "/users/@me/threads/archived/private" }
@@ -238,8 +237,6 @@ var (
 	EndpointFollowupMessageActions = func(aID, iToken, mID string) string {
 		return EndpointWebhookMessage(aID, iToken, mID)
 	}
-
-	EndpointGuildCreate = EndpointAPI + "guilds"
 
 	EndpointInvite = func(iID string) string { return EndpointAPI + "invites/" + iID }
 

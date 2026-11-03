@@ -96,6 +96,23 @@ func (s *Session) addEventHandlerOnce(eventHandler EventHandler) func() {
 	}
 }
 
+func (s *Session) shouldWarnContentIntent() bool {
+	intents := s.Identify.Intents
+	if intents&(IntentGuildMessages|IntentDirectMessages) == 0 || intents&IntentMessageContent != 0 {
+		return false
+	}
+
+	s.handlersMu.RLock()
+	defer s.handlersMu.RUnlock()
+
+	for _, eventType := range []string{messageCreateEventType, messageUpdateEventType} {
+		if len(s.handlers[eventType]) > 0 || len(s.onceHandlers[eventType]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // AddHandler allows you to add an event handler that will be fired anytime
 // the Discord WSAPI event that matches the function fires.
 // The first parameter is a *Session, and the second parameter is a pointer
