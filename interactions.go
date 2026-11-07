@@ -199,6 +199,8 @@ func (t InteractionType) String() string {
 		return "ApplicationCommand"
 	case InteractionMessageComponent:
 		return "MessageComponent"
+	case InteractionApplicationCommandAutocomplete:
+		return "ApplicationCommandAutocomplete"
 	case InteractionModalSubmit:
 		return "ModalSubmit"
 	}

@@ -139,6 +139,12 @@ func (s *State) GuildAdd(guild *Guild) error {
 		if guild.VoiceStates == nil {
 			guild.VoiceStates = g.VoiceStates
 		}
+		if guild.Stickers == nil {
+			guild.Stickers = g.Stickers
+		}
+		if guild.StageInstances == nil {
+			guild.StageInstances = g.StageInstances
+		}
 		*g = *guild
 		return nil
 	}

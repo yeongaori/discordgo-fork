@@ -525,8 +525,7 @@ func (s *Session) UpdateStatusComplex(usd UpdateStatusData) (err error) {
 }
 
 type requestGuildMembersData struct {
-	// TODO: Deprecated. Use string instead of []string
-	GuildIDs  []string  `json:"guild_id"`
+	GuildID   string    `json:"guild_id"`
 	Query     *string   `json:"query,omitempty"`
 	UserIDs   *[]string `json:"user_ids,omitempty"`
 	Limit     int       `json:"limit"`
@@ -572,13 +571,12 @@ func (s *Session) RequestGuildMembersList(guildID string, userIDs []string, limi
 // NOTE: this function is deprecated, please use RequestGuildMembers instead
 func (s *Session) RequestGuildMembersBatch(guildIDs []string, query string, limit int, nonce string, presences bool) (err error) {
 	data := requestGuildMembersData{
-		GuildIDs:  guildIDs,
 		Query:     &query,
 		Limit:     limit,
 		Nonce:     nonce,
 		Presences: presences,
 	}
-	err = s.requestGuildMembers(data)
+	err = s.requestGuildMembers(guildIDs, data)
 	return
 }
 
@@ -593,13 +591,12 @@ func (s *Session) RequestGuildMembersBatch(guildIDs []string, query string, limi
 // NOTE: this function is deprecated, please use RequestGuildMembersList instead
 func (s *Session) RequestGuildMembersBatchList(guildIDs []string, userIDs []string, limit int, nonce string, presences bool) (err error) {
 	data := requestGuildMembersData{
-		GuildIDs:  guildIDs,
 		UserIDs:   &userIDs,
 		Limit:     limit,
 		Nonce:     nonce,
 		Presences: presences,
 	}
-	err = s.requestGuildMembers(data)
+	err = s.requestGuildMembers(guildIDs, data)
 	return
 }
 
@@ -618,7 +615,7 @@ func (s *Session) GatewayWriteStruct(data interface{}) (err error) {
 	return err
 }
 
-func (s *Session) requestGuildMembers(data requestGuildMembersData) (err error) {
+func (s *Session) requestGuildMembers(guildIDs []string, data requestGuildMembersData) (err error) {
 	s.log(LogInformational, "called")
 
 	s.RLock()
@@ -627,9 +624,15 @@ func (s *Session) requestGuildMembers(data requestGuildMembersData) (err error) 
 		return ErrWSNotFound
 	}
 
-	s.wsMutex.Lock()
-	err = s.wsConn.WriteJSON(requestGuildMembersOp{8, data})
-	s.wsMutex.Unlock()
+	for i := range guildIDs {
+		data.GuildID = guildIDs[i]
+		s.wsMutex.Lock()
+		err = s.wsConn.WriteJSON(requestGuildMembersOp{8, data})
+		s.wsMutex.Unlock()
+		if err != nil {
+			return
+		}
+	}
 
 	return
 }
