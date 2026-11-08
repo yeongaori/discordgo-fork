@@ -185,7 +185,7 @@ type Application struct {
 	Slug                   string                                                           `json:"slug"`
 	CoverImage             string                                                           `json:"cover_image"`
 	Flags                  int                                                              `json:"flags,omitempty"`
-	IntegrationTypesConfig map[ApplicationIntegrationType]*ApplicationIntegrationTypeConfig `json:"integration_types,omitempty"`
+	IntegrationTypesConfig map[ApplicationIntegrationType]*ApplicationIntegrationTypeConfig `json:"integration_types_config,omitempty"`
 }
 
 // ApplicationRoleConnectionMetadataType represents the type of application role connection metadata.
@@ -1356,6 +1356,12 @@ const (
 	GuildFeatureVipRegions                            GuildFeature = "VIP_REGIONS"
 	GuildFeatureWelcomeScreenEnabled                  GuildFeature = "WELCOME_SCREEN_ENABLED"
 )
+
+type GuildPruneParams struct {
+	Days              uint32   `json:"days"`
+	ComputePruneCount *bool    `json:"compute_prune_count,omitempty"`
+	IncludeRoles      []string `json:"include_roles,omitempty"`
+}
 
 // A GuildParams stores all the data needed to update discord guild settings
 type GuildParams struct {

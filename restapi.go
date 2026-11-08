@@ -1180,7 +1180,8 @@ func (s *Session) GuildRoleMemberCounts(guildID string, options ...RequestOption
 // Requires 'KICK_MEMBER' permission.
 // guildID	: The ID of a Guild.
 // days		: The number of days to count prune for (1 or more).
-func (s *Session) GuildPruneCount(guildID string, days uint32, options ...RequestOption) (count uint32, err error) {
+// includeRoles	: The IDs of roles whose members are also counted.
+func (s *Session) GuildPruneCount(guildID string, days uint32, includeRoles []string, options ...RequestOption) (count uint32, err error) {
 	count = 0
 
 	if days <= 0 {
@@ -1192,7 +1193,13 @@ func (s *Session) GuildPruneCount(guildID string, days uint32, options ...Reques
 		Pruned uint32 `json:"pruned"`
 	}{}
 
-	uri := EndpointGuildPrune(guildID) + "?days=" + strconv.FormatUint(uint64(days), 10)
+	queryParams := url.Values{}
+	queryParams.Set("days", strconv.FormatUint(uint64(days), 10))
+	if len(includeRoles) > 0 {
+		queryParams.Set("include_roles", strings.Join(includeRoles, ","))
+	}
+
+	uri := EndpointGuildPrune(guildID) + "?" + queryParams.Encode()
 	body, err := s.RequestWithBucketID("GET", uri, nil, EndpointGuildPrune(guildID), options...)
 	if err != nil {
 		return
@@ -1211,19 +1218,15 @@ func (s *Session) GuildPruneCount(guildID string, days uint32, options ...Reques
 // GuildPrune Begin as prune operation. Requires the 'KICK_MEMBERS' permission.
 // Returns an object with one 'pruned' key indicating the number of members that were removed in the prune operation.
 // guildID	: The ID of a Guild.
-// days		: The number of days to count prune for (1 or more).
-func (s *Session) GuildPrune(guildID string, days uint32, options ...RequestOption) (count uint32, err error) {
+// data		: The prune days (1 or more), whether to compute the pruned count, and the roles to include.
+func (s *Session) GuildPrune(guildID string, data *GuildPruneParams, options ...RequestOption) (count uint32, err error) {
 
 	count = 0
 
-	if days <= 0 {
+	if data == nil || data.Days <= 0 {
 		err = ErrPruneDaysBounds
 		return
 	}
-
-	data := struct {
-		days uint32
-	}{days}
 
 	p := struct {
 		Pruned uint32 `json:"pruned"`
@@ -1530,7 +1533,7 @@ func (s *Session) GuildTemplates(guildID string, options ...RequestOption) (st [
 // GuildTemplateCreate creates a template for the guild
 // guildID : The ID of the guild
 // data    : Template metadata
-func (s *Session) GuildTemplateCreate(guildID string, data *GuildTemplateParams, options ...RequestOption) (st *GuildTemplate) {
+func (s *Session) GuildTemplateCreate(guildID string, data *GuildTemplateParams, options ...RequestOption) (st *GuildTemplate, err error) {
 	body, err := s.RequestWithBucketID("POST", EndpointGuildTemplates(guildID), data, EndpointGuildTemplates(guildID), options...)
 	if err != nil {
 		return
@@ -3420,10 +3423,10 @@ func (s *Session) AutoModerationRuleDelete(guildID, ruleID string, options ...Re
 
 // ApplicationRoleConnectionMetadata returns application role connection metadata.
 // appID : ID of the application
-func (s *Session) ApplicationRoleConnectionMetadata(appID string) (st []*ApplicationRoleConnectionMetadata, err error) {
+func (s *Session) ApplicationRoleConnectionMetadata(appID string, options ...RequestOption) (st []*ApplicationRoleConnectionMetadata, err error) {
 	endpoint := EndpointApplicationRoleConnectionMetadata(appID)
 	var body []byte
-	body, err = s.RequestWithBucketID("GET", endpoint, nil, endpoint)
+	body, err = s.RequestWithBucketID("GET", endpoint, nil, endpoint, options...)
 	if err != nil {
 		return
 	}
@@ -3435,10 +3438,10 @@ func (s *Session) ApplicationRoleConnectionMetadata(appID string) (st []*Applica
 // ApplicationRoleConnectionMetadataUpdate updates and returns application role connection metadata.
 // appID    : ID of the application
 // metadata : New metadata
-func (s *Session) ApplicationRoleConnectionMetadataUpdate(appID string, metadata []*ApplicationRoleConnectionMetadata) (st []*ApplicationRoleConnectionMetadata, err error) {
+func (s *Session) ApplicationRoleConnectionMetadataUpdate(appID string, metadata []*ApplicationRoleConnectionMetadata, options ...RequestOption) (st []*ApplicationRoleConnectionMetadata, err error) {
 	endpoint := EndpointApplicationRoleConnectionMetadata(appID)
 	var body []byte
-	body, err = s.RequestWithBucketID("PUT", endpoint, metadata, endpoint)
+	body, err = s.RequestWithBucketID("PUT", endpoint, metadata, endpoint, options...)
 	if err != nil {
 		return
 	}
@@ -3449,10 +3452,10 @@ func (s *Session) ApplicationRoleConnectionMetadataUpdate(appID string, metadata
 
 // UserApplicationRoleConnection returns user role connection to the specified application.
 // appID : ID of the application
-func (s *Session) UserApplicationRoleConnection(appID string) (st *ApplicationRoleConnection, err error) {
+func (s *Session) UserApplicationRoleConnection(appID string, options ...RequestOption) (st *ApplicationRoleConnection, err error) {
 	endpoint := EndpointUserApplicationRoleConnection(appID)
 	var body []byte
-	body, err = s.RequestWithBucketID("GET", endpoint, nil, endpoint)
+	body, err = s.RequestWithBucketID("GET", endpoint, nil, endpoint, options...)
 	if err != nil {
 		return
 	}
@@ -3465,10 +3468,10 @@ func (s *Session) UserApplicationRoleConnection(appID string) (st *ApplicationRo
 // UserApplicationRoleConnectionUpdate updates and returns user role connection to the specified application.
 // appID      : ID of the application
 // connection : New ApplicationRoleConnection data
-func (s *Session) UserApplicationRoleConnectionUpdate(appID string, rconn *ApplicationRoleConnection) (st *ApplicationRoleConnection, err error) {
+func (s *Session) UserApplicationRoleConnectionUpdate(appID string, rconn *ApplicationRoleConnection, options ...RequestOption) (st *ApplicationRoleConnection, err error) {
 	endpoint := EndpointUserApplicationRoleConnection(appID)
 	var body []byte
-	body, err = s.RequestWithBucketID("PUT", endpoint, rconn, endpoint)
+	body, err = s.RequestWithBucketID("PUT", endpoint, rconn, endpoint, options...)
 	if err != nil {
 		return
 	}
@@ -3485,11 +3488,11 @@ func (s *Session) UserApplicationRoleConnectionUpdate(appID string, rconn *Appli
 // channelID : ID of the channel.
 // messageID : ID of the message.
 // answerID  : ID of the answer.
-func (s *Session) PollAnswerVoters(channelID, messageID string, answerID int) (voters []*User, err error) {
+func (s *Session) PollAnswerVoters(channelID, messageID string, answerID int, options ...RequestOption) (voters []*User, err error) {
 	endpoint := EndpointPollAnswerVoters(channelID, messageID, answerID)
 
 	var body []byte
-	body, err = s.RequestWithBucketID("GET", endpoint, nil, endpoint)
+	body, err = s.RequestWithBucketID("GET", endpoint, nil, endpoint, options...)
 	if err != nil {
 		return
 	}
@@ -3510,11 +3513,11 @@ func (s *Session) PollAnswerVoters(channelID, messageID string, answerID int) (v
 // PollExpire expires poll on the specified message.
 // channelID : ID of the channel.
 // messageID : ID of the message.
-func (s *Session) PollExpire(channelID, messageID string) (msg *Message, err error) {
+func (s *Session) PollExpire(channelID, messageID string, options ...RequestOption) (msg *Message, err error) {
 	endpoint := EndpointPollExpire(channelID, messageID)
 
 	var body []byte
-	body, err = s.RequestWithBucketID("POST", endpoint, nil, endpoint)
+	body, err = s.RequestWithBucketID("POST", endpoint, nil, endpoint, options...)
 	if err != nil {
 		return
 	}
@@ -3529,10 +3532,10 @@ func (s *Session) PollExpire(channelID, messageID string) (msg *Message, err err
 
 // SKUs returns all SKUs for a given application.
 // appID : The ID of the application.
-func (s *Session) SKUs(appID string) (skus []*SKU, err error) {
+func (s *Session) SKUs(appID string, options ...RequestOption) (skus []*SKU, err error) {
 	endpoint := EndpointApplicationSKUs(appID)
 
-	body, err := s.RequestWithBucketID("GET", endpoint, nil, endpoint)
+	body, err := s.RequestWithBucketID("GET", endpoint, nil, endpoint, options...)
 	if err != nil {
 		return
 	}

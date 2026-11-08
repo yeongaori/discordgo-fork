@@ -206,7 +206,7 @@ func TestGuildPruneCount(t *testing.T) {
 		t.Skip("Skipping, dg not set.")
 	}
 
-	_, err := dg.GuildPruneCount(envGuild, 1)
+	_, err := dg.GuildPruneCount(envGuild, 1, nil)
 	if err != nil {
 		t.Errorf("GuildPruneCount returned error: %+v", err)
 	}
@@ -224,7 +224,7 @@ func TestGuildPrune(t *testing.T) {
 		t.Skip("Skipping, dg not set.")
 	}
 
-	_, err := dg.GuildPrune(envGuild, 1)
+	_, err := dg.GuildPrune(envGuild, &GuildPruneParams{Days: 1})
 	if err != nil {
 		t.Errorf("GuildPrune returned error: %+v", err)
 	}
