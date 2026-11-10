@@ -27,6 +27,9 @@ const (
 	ContainerComponent             ComponentType = 17
 	LabelComponent                 ComponentType = 18
 	FileUploadComponent            ComponentType = 19
+	RadioGroupComponent            ComponentType = 21
+	CheckboxGroupComponent         ComponentType = 22
+	CheckboxComponent              ComponentType = 23
 )
 
 // MessageComponent is a base interface for all message components.
@@ -77,8 +80,18 @@ func (umc *unmarshalableMessageComponent) UnmarshalJSON(src []byte) error {
 		umc.MessageComponent = &Label{}
 	case FileUploadComponent:
 		umc.MessageComponent = &FileUpload{}
+	case RadioGroupComponent:
+		umc.MessageComponent = &RadioGroup{}
+	case CheckboxGroupComponent:
+		umc.MessageComponent = &CheckboxGroup{}
+	case CheckboxComponent:
+		umc.MessageComponent = &Checkbox{}
 	default:
-		return fmt.Errorf("unknown component type: %d", v.Type)
+		umc.MessageComponent = &UnknownComponent{
+			ComponentType: v.Type,
+			Data:          append(json.RawMessage(nil), src...),
+		}
+		return nil
 	}
 	return json.Unmarshal(src, umc.MessageComponent)
 }
@@ -394,6 +407,7 @@ func (s Section) MarshalJSON() ([]byte, error) {
 
 // TextDisplay is a top-level component that allows you to add markdown-formatted text to the message.
 type TextDisplay struct {
+	ID      int    `json:"id,omitempty"`
 	Content string `json:"content"`
 }
 
@@ -481,6 +495,8 @@ type FileComponent struct {
 	ID      int               `json:"id,omitempty"`
 	File    UnfurledMediaItem `json:"file"`
 	Spoiler bool              `json:"spoiler"`
+	Name    string            `json:"name,omitempty"`
+	Size    int               `json:"size,omitempty"`
 }
 
 // Type is a method to get the type of a component.
@@ -640,11 +656,12 @@ func (l Label) MarshalJSON() ([]byte, error) {
 // FileUploads are available on modals. They must be placed inside a Label.
 type FileUpload struct {
 	// Unique identifier for the component; auto populated through increment if not provided.
-	ID        int    `json:"id,omitempty"`
-	CustomID  string `json:"custom_id,omitempty"`
-	MinValues *int   `json:"min_values,omitempty"`
-	MaxValues int    `json:"max_values,omitempty"`
-	Required  *bool  `json:"required,omitempty"`
+	ID        int              `json:"id,omitempty"`
+	CustomID  string           `json:"custom_id,omitempty"`
+	MinValues *int             `json:"min_values,omitempty"`
+	MaxValues int              `json:"max_values,omitempty"`
+	Required  *bool            `json:"required,omitempty"`
+	FileTypes []FileUploadType `json:"file_types,omitempty"`
 
 	// List of values that is only populated when receiving an interaction response; do not fill this manually.
 	Values []string `json:"values,omitempty"`
@@ -668,10 +685,146 @@ func (f FileUpload) MarshalJSON() ([]byte, error) {
 	})
 }
 
+type FileUploadType string
+
+const (
+	FileUploadTypeAudio FileUploadType = "audio"
+	FileUploadTypeImage FileUploadType = "image"
+	FileUploadTypeVideo FileUploadType = "video"
+)
+
+type RadioGroup struct {
+	ID       int                `json:"id,omitempty"`
+	CustomID string             `json:"custom_id,omitempty"`
+	Options  []RadioGroupOption `json:"options,omitempty"`
+	Required *bool              `json:"required,omitempty"`
+	Value    *string            `json:"value,omitempty"`
+}
+
+func (RadioGroup) Type() ComponentType {
+	return RadioGroupComponent
+}
+
+func (r RadioGroup) MarshalJSON() ([]byte, error) {
+	type radioGroup RadioGroup
+
+	return Marshal(struct {
+		radioGroup
+		Type ComponentType `json:"type"`
+	}{
+		radioGroup: radioGroup(r),
+		Type:       r.Type(),
+	})
+}
+
+type RadioGroupOption struct {
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Default     bool   `json:"default,omitempty"`
+}
+
+type CheckboxGroup struct {
+	ID        int                   `json:"id,omitempty"`
+	CustomID  string                `json:"custom_id,omitempty"`
+	Options   []CheckboxGroupOption `json:"options,omitempty"`
+	MinValues *int                  `json:"min_values,omitempty"`
+	MaxValues int                   `json:"max_values,omitempty"`
+	Required  *bool                 `json:"required,omitempty"`
+	Values    []string              `json:"values,omitempty"`
+}
+
+func (CheckboxGroup) Type() ComponentType {
+	return CheckboxGroupComponent
+}
+
+func (c CheckboxGroup) MarshalJSON() ([]byte, error) {
+	type checkboxGroup CheckboxGroup
+
+	return Marshal(struct {
+		checkboxGroup
+		Type ComponentType `json:"type"`
+	}{
+		checkboxGroup: checkboxGroup(c),
+		Type:          c.Type(),
+	})
+}
+
+type CheckboxGroupOption struct {
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Default     bool   `json:"default,omitempty"`
+}
+
+type Checkbox struct {
+	ID       int    `json:"id,omitempty"`
+	CustomID string `json:"custom_id,omitempty"`
+	Default  bool   `json:"default,omitempty"`
+	Value    bool   `json:"value,omitempty"`
+}
+
+func (Checkbox) Type() ComponentType {
+	return CheckboxComponent
+}
+
+func (c Checkbox) MarshalJSON() ([]byte, error) {
+	type checkbox Checkbox
+
+	return Marshal(struct {
+		checkbox
+		Type ComponentType `json:"type"`
+	}{
+		checkbox: checkbox(c),
+		Type:     c.Type(),
+	})
+}
+
+type UnknownComponent struct {
+	ComponentType ComponentType
+	Data          json.RawMessage
+}
+
+func (c UnknownComponent) Type() ComponentType {
+	return c.ComponentType
+}
+
+func (c UnknownComponent) MarshalJSON() ([]byte, error) {
+	return c.Data.MarshalJSON()
+}
+
 // UnfurledMediaItem represents an unfurled media item.
 type UnfurledMediaItem struct {
-	URL string `json:"url"`
+	URL                 string                                `json:"url"`
+	ProxyURL            string                                `json:"proxy_url,omitempty"`
+	Width               *int                                  `json:"width,omitempty"`
+	Height              *int                                  `json:"height,omitempty"`
+	Placeholder         string                                `json:"placeholder,omitempty"`
+	PlaceholderVersion  int                                   `json:"placeholder_version,omitempty"`
+	ContentType         string                                `json:"content_type,omitempty"`
+	LoadingState        UnfurledMediaItemLoadingState         `json:"loading_state,omitempty"`
+	Flags               UnfurledMediaItemFlags                `json:"flags,omitempty"`
+	ContentScanMetadata *UnfurledMediaItemContentScanMetadata `json:"content_scan_metadata,omitempty"`
+	AttachmentID        string                                `json:"attachment_id,omitempty"`
 }
+
+type UnfurledMediaItemFlags int
+
+const (
+	UnfurledMediaItemFlagsIsAnimated UnfurledMediaItemFlags = 1 << 0
+)
+
+type UnfurledMediaItemContentScanMetadata struct {
+	Flags UnfurledMediaItemContentScanMetadataFlags `json:"flags"`
+}
+
+type UnfurledMediaItemContentScanMetadataFlags int
+
+const (
+	UnfurledMediaItemContentScanMetadataFlagsIsExplicitContent UnfurledMediaItemContentScanMetadataFlags = 1 << 0
+	UnfurledMediaItemContentScanMetadataFlagsIsGoreContent     UnfurledMediaItemContentScanMetadataFlags = 1 << 1
+	UnfurledMediaItemContentScanMetadataFlagsIsSelfHarmContent UnfurledMediaItemContentScanMetadataFlags = 1 << 2
+)
 
 // UnfurledMediaItemLoadingState is the loading state of the unfurled media item.
 type UnfurledMediaItemLoadingState uint
@@ -683,12 +836,3 @@ const (
 	UnfurledMediaItemLoadingStateLoadingSuccess UnfurledMediaItemLoadingState = 2
 	UnfurledMediaItemLoadingStateLoadedNotFound UnfurledMediaItemLoadingState = 3
 )
-
-// ResolvedUnfurledMediaItem represents a resolved unfurled media item.
-type ResolvedUnfurledMediaItem struct {
-	URL         string `json:"url"`
-	ProxyURL    string `json:"proxy_url"`
-	Width       int    `json:"width"`
-	Height      int    `json:"height"`
-	ContentType string `json:"content_type"`
-}

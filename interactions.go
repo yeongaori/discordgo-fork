@@ -127,7 +127,8 @@ type ApplicationCommandOption struct {
 	// Minimum length of string option.
 	MinLength *int `json:"min_length,omitempty"`
 	// Maximum length of string option.
-	MaxLength int `json:"max_length,omitempty"`
+	MaxLength int              `json:"max_length,omitempty"`
+	FileTypes []FileUploadType `json:"file_types,omitempty"`
 }
 
 // ApplicationCommandOptionChoice represents a slash command option choice.
@@ -383,6 +384,7 @@ func (ApplicationCommandInteractionData) Type() InteractionType {
 
 // MessageComponentInteractionData contains the data of message component interaction.
 type MessageComponentInteractionData struct {
+	ID            int                              `json:"id"`
 	CustomID      string                           `json:"custom_id"`
 	ComponentType ComponentType                    `json:"component_type"`
 	Resolved      ComponentInteractionDataResolved `json:"resolved"`
