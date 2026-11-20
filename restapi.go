@@ -148,7 +148,14 @@ func WithHeader(key, value string) RequestOption {
 
 // WithAuditLogReason changes audit log reason associated with the request.
 func WithAuditLogReason(reason string) RequestOption {
-	return WithHeader("X-Audit-Log-Reason", reason)
+	return WithHeader("X-Audit-Log-Reason", url.PathEscape(reason))
+}
+
+func addAuditLogReason(reason string, options []RequestOption) []RequestOption {
+	if reason == "" {
+		return options
+	}
+	return append([]RequestOption{WithAuditLogReason(reason)}, options...)
 }
 
 // WithLocale changes accepted locale of the request.
@@ -753,21 +760,11 @@ func (s *Session) GuildBan(guildID, userID string, options ...RequestOption) (st
 // days      : The number of days of previous comments to delete.
 func (s *Session) GuildBanCreateWithReason(guildID, userID, reason string, days int, options ...RequestOption) (err error) {
 
-	uri := EndpointGuildBan(guildID, userID)
+	data := struct {
+		DeleteMessageSeconds int `json:"delete_message_seconds,omitempty"`
+	}{DeleteMessageSeconds: days * 86400}
 
-	queryParams := url.Values{}
-	if days > 0 {
-		queryParams.Set("delete_message_days", strconv.Itoa(days))
-	}
-	if reason != "" {
-		queryParams.Set("reason", reason)
-	}
-
-	if len(queryParams) > 0 {
-		uri += "?" + queryParams.Encode()
-	}
-
-	_, err = s.RequestWithBucketID("PUT", uri, nil, EndpointGuildBan(guildID, ""), options...)
+	_, err = s.RequestWithBucketID("PUT", EndpointGuildBan(guildID, userID), data, EndpointGuildBan(guildID, ""), addAuditLogReason(reason, options)...)
 	return
 }
 
@@ -878,12 +875,7 @@ func (s *Session) GuildMemberDelete(guildID, userID string, options ...RequestOp
 // reason    : The reason for the kick
 func (s *Session) GuildMemberDeleteWithReason(guildID, userID, reason string, options ...RequestOption) (err error) {
 
-	uri := EndpointGuildMember(guildID, userID)
-	if reason != "" {
-		uri += "?reason=" + url.QueryEscape(reason)
-	}
-
-	_, err = s.RequestWithBucketID("DELETE", uri, nil, EndpointGuildMember(guildID, ""), options...)
+	_, err = s.RequestWithBucketID("DELETE", EndpointGuildMember(guildID, userID), nil, EndpointGuildMember(guildID, ""), addAuditLogReason(reason, options)...)
 	return
 }
 
